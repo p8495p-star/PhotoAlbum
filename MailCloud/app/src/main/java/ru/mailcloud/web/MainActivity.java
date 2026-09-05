@@ -20,7 +20,15 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 public class MainActivity extends Activity {
+
+    private static final int SCROLL_STEP = 200;
+    private static final int SCROLL_REPEAT_DELAY = 60;
+    private static final long SWIPE_MIN_INTERVAL = 220;
 
     private static final int[] MEDIA_KEYS = {
             KeyEvent.KEYCODE_MEDIA_PLAY,
@@ -36,11 +44,13 @@ public class MainActivity extends Activity {
     private WebView web;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    private Runnable scrollRunnable;
+    private long lastSwipeTime;
+
     private TextView btnLeft;
     private TextView btnRight;
     private TextView btnClose;
-
-    private long lastSwipeTime;
+    private boolean buttonsMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,8 +82,8 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                web.requestFocus();
                 injectTvScript();
+                web.requestFocus();
             }
 
             @Override
@@ -84,6 +94,15 @@ public class MainActivity extends Activity {
         });
         web.setWebChromeClient(new WebChromeClient());
 
+        web.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                return handleWebKeyDown(keyCode);
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                return handleWebKeyUp(keyCode);
+            }
+            return false;
+        });
+
         web.loadUrl(getString(R.string.app_url));
 
         FrameLayout root = new FrameLayout(this);
@@ -92,14 +111,19 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        btnLeft = makeArrowButton("\u276E", Gravity.LEFT | Gravity.CENTER_VERTICAL, 26, 24, true, v -> {
+        btnLeft = makeArrowButton("\u276E", Gravity.LEFT | Gravity.CENTER_VERTICAL, 26, 24, v -> {
             swipe(-1);
         });
-        btnRight = makeArrowButton("\u276F", Gravity.RIGHT | Gravity.CENTER_VERTICAL, 26, 24, true, v -> {
+        btnRight = makeArrowButton("\u276F", Gravity.RIGHT | Gravity.CENTER_VERTICAL, 26, 24, v -> {
             swipe(1);
         });
-        btnClose = makeArrowButton("\u2715", Gravity.RIGHT | Gravity.TOP, 34, 16, true, v -> {
-            web.goBack();
+        btnClose = makeArrowButton("\u2715", Gravity.RIGHT | Gravity.TOP, 34, 16, v -> {
+            if (web != null && web.canGoBack()) {
+                web.goBack();
+            } else {
+                finish();
+            }
+            exitButtonsMode();
         });
 
         root.addView(btnLeft);
@@ -110,14 +134,14 @@ public class MainActivity extends Activity {
     }
 
     private TextView makeArrowButton(String glyph, int gravity, int sizeDp, int marginDp,
-                                     boolean focusable, View.OnClickListener listener) {
+                                     View.OnClickListener listener) {
         TextView tv = new TextView(this);
         tv.setText(glyph);
         tv.setTextColor(Color.WHITE);
         tv.setTextSize(sizeDp);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
-        tv.setFocusable(focusable);
+        tv.setFocusable(true);
         tv.setClickable(true);
         int pad = dp(12);
         tv.setPadding(pad, pad, pad, pad);
@@ -142,7 +166,6 @@ public class MainActivity extends Activity {
                     .setDuration(120).start();
         });
 
-        tv.setVisibility(View.GONE);
         return tv;
     }
 
@@ -161,117 +184,55 @@ public class MainActivity extends Activity {
     }
 
     private void injectTvScript() {
-        String js = "(function(){"
-                + "var style=document.createElement('style');"
-                + "style.textContent='"
-                + "*:focus{outline:3px solid #4FC3F7 !important;outline-offset:2px !important;}"
-                + "a:focus,button:focus,input:focus,select:focus,textarea:focus,[tabindex]:focus{"
-                + "outline:3px solid #4FC3F7 !important;outline-offset:2px !important;}"
-                + "';"
-                + "document.head.appendChild(style);"
-                + "function findPhotoTarget(){"
-                + "var hits=document.querySelectorAll('[class*=photo],[class*=image],[class*=fullscreen],[class*=preview],[class*=viewer],[class*=lightbox]');"
-                + "for(var i=0;i<hits.length;i++){var r=hits[i].getBoundingClientRect();"
-                + "if(r.width>0&&r.height>0)return hits[i];}"
-                + "return null;"
-                + "}"
-                + "window.__tvSwipe=function(dir){"
-                + "var target=findPhotoTarget()||document.body;"
-                + "var w=window.innerWidth,h=window.innerHeight;"
-                + "var off=Math.min(w,h)*0.35;"
-                + "var sx=w/2+dir*off,ex=w/2-dir*off,sy=h/2,ey=h/2;"
-                + "dispatchTouch(target,'touchstart',sx,sy);"
-                + "setTimeout(function(){dispatchTouch(target,'touchmove',(sx+ex)/2,(sy+ey)/2);},30);"
-                + "setTimeout(function(){"
-                + "dispatchTouch(target,'touchend',ex,ey);"
-                + "dispatchMouse(target,'mousedown',ex,ey);"
-                + "dispatchMouse(target,'mouseup',ex,ey);"
-                + "dispatchMouse(target,'click',ex,ey);"
-                + "},90);"
-                + "};"
-                + "function dispatchTouch(t,name,cx,cy){"
-                + "var ev;"
-                + "try{var touch=new Touch({identifier:1,target:t,clientX:cx,clientY:cy,pageX:cx,pageY:cy});"
-                + "ev=new TouchEvent(name,{bubbles:true,cancelable:true,touches:name==='touchend'?[]:[touch],targetTouches:[],changedTouches:[touch]});}"
-                + "catch(e){"
-                + "ev=new Event(name,{bubbles:true,cancelable:true});"
-                + "Object.defineProperty(ev,'touches',{value:name==='touchend'?[]:[{clientX:cx,clientY:cy}]});"
-                + "Object.defineProperty(ev,'changedTouches',{value:[{clientX:cx,clientY:cy}]});"
-                + "}"
-                + "t.dispatchEvent(ev);"
-                + "}"
-                + "function dispatchMouse(t,name,cx,cy){"
-                + "var ev=new MouseEvent(name,{bubbles:true,cancelable:true,clientX:cx,clientY:cy});"
-                + "t.dispatchEvent(ev);"
-                + "}"
-                + "window.__tvClick=function(){"
-                + "var el=document.activeElement;"
-                + "if(el&&el.tagName!=='BODY'&&el.tagName!=='HTML'){"
-                + "el.click();var r=el.getBoundingClientRect();"
-                + "dispatchMouse(el,'mousedown',r.left+r.width/2,r.top+r.height/2);"
-                + "dispatchMouse(el,'mouseup',r.left+r.width/2,r.top+r.height/2);"
-                + "return true;}"
-                + "return false;"
-                + "};"
-                + "return true;"
-                + "})()";
-        web.evaluateJavascript(js, null);
+        String js = loadAsset("tv_inject.js");
+        if (!js.isEmpty()) {
+            web.evaluateJavascript(js, null);
+        }
     }
 
     private void reInjectAfterDelay() {
         handler.removeCallbacksAndMessages("reinject");
         handler.postDelayed(() -> {
             if (web != null) injectTvScript();
-        }, 1500);
+        }, 1200);
+    }
+
+    private String loadAsset(String name) {
+        try {
+            InputStream is = getAssets().open(name);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
+            is.close();
+            return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private void swipe(int dir) {
         long now = System.currentTimeMillis();
-        if (now - lastSwipeTime < 200) return;
+        if (now - lastSwipeTime < SWIPE_MIN_INTERVAL) return;
         lastSwipeTime = now;
-        showButtons();
         if (web != null) {
             web.evaluateJavascript("window.__tvSwipe&&window.__tvSwipe(" + dir + ")", null);
-            handler.removeCallbacksAndMessages("hide");
-            handler.postDelayed(this::hideButtons, 1600);
         }
     }
 
-    private void showButtons() {
-        btnLeft.setVisibility(View.VISIBLE);
-        btnRight.setVisibility(View.VISIBLE);
-        btnClose.setVisibility(View.VISIBLE);
-    }
-
-    private void hideButtons() {
-        btnLeft.setVisibility(View.GONE);
-        btnRight.setVisibility(View.GONE);
-        btnClose.setVisibility(View.GONE);
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (web != null && web.canGoBack()) {
-                web.goBack();
-            } else {
-                finish();
-            }
-            return true;
-        }
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
-            return true;
-        }
-        if (isMedia(keyCode)) {
-            web.dispatchKeyEvent(event);
-            return true;
-        }
+    private boolean handleWebKeyDown(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 swipe(-1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 swipe(1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                startScroll(-SCROLL_STEP);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                startScroll(SCROLL_STEP);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
@@ -283,6 +244,78 @@ public class MainActivity extends Activity {
                     }
                 });
                 return true;
+        }
+        return false;
+    }
+
+    private boolean handleWebKeyUp(int keyCode) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            stopScroll();
+            return true;
+        }
+        return false;
+    }
+
+    private void startScroll(int step) {
+        stopScroll();
+        scrollRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (web != null) {
+                    web.evaluateJavascript("window.scrollBy(0," + step + ")", null);
+                    handler.postDelayed(this, SCROLL_REPEAT_DELAY);
+                }
+            }
+        };
+        handler.post(scrollRunnable);
+    }
+
+    private void stopScroll() {
+        if (scrollRunnable != null) {
+            handler.removeCallbacks(scrollRunnable);
+            scrollRunnable = null;
+        }
+    }
+
+    private void enterButtonsMode() {
+        buttonsMode = true;
+        btnClose.setFocusable(true);
+        btnLeft.setFocusable(true);
+        btnRight.setFocusable(true);
+        btnClose.requestFocus();
+        btnLeft.setAlpha(1f);
+        btnRight.setAlpha(1f);
+        btnClose.setAlpha(1f);
+    }
+
+    private void exitButtonsMode() {
+        buttonsMode = false;
+        web.requestFocus();
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (buttonsMode) {
+                exitButtonsMode();
+            } else {
+                enterButtonsMode();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (buttonsMode) {
+                exitButtonsMode();
+            } else if (web != null && web.canGoBack()) {
+                web.goBack();
+            } else {
+                finish();
+            }
+            return true;
+        }
+        if (isMedia(keyCode)) {
+            web.dispatchKeyEvent(event);
+            return true;
         }
         return super.onKeyDown(keyCode, event);
     }
@@ -313,6 +346,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        stopScroll();
         handler.removeCallbacksAndMessages(null);
         if (web != null) web.destroy();
         super.onDestroy();
