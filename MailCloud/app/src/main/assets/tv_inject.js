@@ -20,25 +20,26 @@
 
   function findOverlay(){
     var w = window.innerWidth, h = window.innerHeight;
-    var sel = '[role="dialog"],[class*="viewer"],[class*="lightbox"],[class*="preview"],[class*="fullscreen"],[class*="modal"],[class*="zoom"],[class*="gallery"],[class*="slideshow"]';
-    var base = document.querySelectorAll(sel);
-    var i, e, r;
-    for (i = 0; i < base.length; i++) {
-      e = base[i];
+    var strong = '[role="dialog"],[role="presentation"],[class*="viewer"],[class*="lightbox"],[class*="preview"],[class*="fullscreen"],[class*="modal"],[class*="zoom"],[class*="gallery"],[class*="slideshow"],[class*="Viewer"],[class*="Lightbox"]';
+    var base = document.querySelectorAll(strong);
+    for (var i = 0; i < base.length; i++) {
+      var e = base[i];
       if (!isVis(e)) continue;
-      r = e.getBoundingClientRect();
-      if (r.width > w * 0.5 && r.height > h * 0.4) return e;
+      var r = e.getBoundingClientRect();
+      if (r.width > w * 0.4 && r.height > h * 0.3) return e;
     }
     var all = document.querySelectorAll('div,section,main,article');
     var best = null, bestA = 0;
     for (i = 0; i < all.length; i++) {
       e = all[i];
       if (!isVis(e)) continue;
+      var cs = window.getComputedStyle(e);
+      if (cs.position !== 'fixed' && cs.position !== 'absolute') continue;
       r = e.getBoundingClientRect();
       var a = r.width * r.height;
       if (a > bestA) { bestA = a; best = e; }
     }
-    if (bestA > w * h * 0.6) return best;
+    if (bestA > w * h * 0.55) return best;
     return null;
   }
 
@@ -185,6 +186,18 @@
       return true;
     }
     return false;
+  };
+
+  window.__tvEscape = function(){
+    var opts = {key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true};
+    ['keydown','keyup'].forEach(function(t){
+      try {
+        var e = new KeyboardEvent(t, opts);
+        document.dispatchEvent(e);
+        window.dispatchEvent(e);
+      } catch (err) { }
+    });
+    return true;
   };
 
   return true;

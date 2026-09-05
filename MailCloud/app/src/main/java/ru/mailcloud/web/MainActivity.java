@@ -49,8 +49,7 @@ public class MainActivity extends Activity {
 
     private TextView btnLeft;
     private TextView btnRight;
-    private TextView btnClose;
-    private boolean buttonsMode;
+    private boolean buttonsVisible = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,61 +110,39 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        btnLeft = makeArrowButton("\u276E", Gravity.LEFT | Gravity.CENTER_VERTICAL, 26, 24, v -> {
-            swipe(-1);
-        });
-        btnRight = makeArrowButton("\u276F", Gravity.RIGHT | Gravity.CENTER_VERTICAL, 26, 24, v -> {
-            swipe(1);
-        });
-        btnClose = makeArrowButton("\u2715", Gravity.RIGHT | Gravity.TOP, 34, 16, v -> {
-            if (web != null && web.canGoBack()) {
-                web.goBack();
-            } else {
-                finish();
-            }
-            exitButtonsMode();
-        });
+        btnLeft = makeNavButton("\u276E", Gravity.LEFT | Gravity.CENTER_VERTICAL, v -> swipe(-1));
+        btnRight = makeNavButton("\u276F", Gravity.RIGHT | Gravity.CENTER_VERTICAL, v -> swipe(1));
 
         root.addView(btnLeft);
         root.addView(btnRight);
-        root.addView(btnClose);
 
         setContentView(root);
     }
 
-    private TextView makeArrowButton(String glyph, int gravity, int sizeDp, int marginDp,
-                                     View.OnClickListener listener) {
+    private TextView makeNavButton(String glyph, int gravity, View.OnClickListener listener) {
         TextView tv = new TextView(this);
         tv.setText(glyph);
         tv.setTextColor(Color.WHITE);
-        tv.setTextSize(sizeDp);
+        tv.setTextSize(18);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
         tv.setFocusable(true);
         tv.setClickable(true);
-        int pad = dp(12);
-        tv.setPadding(pad, pad, pad, pad);
+        tv.setAlpha(0.70f);
+        tv.setPadding(dp(10), dp(10), dp(10), dp(10));
 
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0xCC000000);
-        bg.setStroke(dp(2), 0xFFFFD740);
+        bg.setColor(0x99000000);
+        bg.setStroke(dp(1), 0x99FFD740);
         tv.setBackground(bg);
 
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(60), dp(60));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(46), dp(46));
         lp.gravity = gravity;
-        if ((gravity & Gravity.LEFT) != 0) lp.leftMargin = dp(marginDp);
-        if ((gravity & Gravity.RIGHT) != 0) lp.rightMargin = dp(marginDp);
-        if ((gravity & Gravity.TOP) != 0) lp.topMargin = dp(marginDp);
+        if ((gravity & Gravity.LEFT) != 0) lp.leftMargin = dp(18);
+        if ((gravity & Gravity.RIGHT) != 0) lp.rightMargin = dp(18);
         tv.setLayoutParams(lp);
         tv.setOnClickListener(listener);
-
-        tv.setOnFocusChangeListener((v, hasFocus) -> {
-            v.animate().scaleX(hasFocus ? 1.3f : 1f)
-                    .scaleY(hasFocus ? 1.3f : 1f)
-                    .setDuration(120).start();
-        });
-
         return tv;
     }
 
@@ -237,12 +214,7 @@ public class MainActivity extends Activity {
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                web.evaluateJavascript("window.__tvClick&&window.__tvClick()", value -> {
-                    if (value == null || value.equals("false")) {
-                        web.evaluateJavascript(
-                                "(document.activeElement&&document.activeElement.click?document.activeElement.click():null)", null);
-                    }
-                });
+                clickFocused();
                 return true;
         }
         return false;
@@ -254,6 +226,85 @@ public class MainActivity extends Activity {
             return true;
         }
         return false;
+    }
+
+    private void clickFocused() {
+        web.evaluateJavascript("window.__tvClick&&window.__tvClick()", value -> {
+            if (value == null || value.equals("false")) {
+                web.evaluateJavascript(
+                        "(document.activeElement&&document.activeElement.click?document.activeElement.click():null)", null);
+            }
+        });
+    }
+
+    /*
+     * D-pad события перехватываются здесь, в самый верхний момент доставки,
+     * ДО того как WebView или любой другой view успеет их съесть.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        int action = event.getAction();
+        int kc = event.getKeyCode();
+
+        if (action == KeyEvent.ACTION_DOWN) {
+            switch (kc) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    swipe(-1);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    swipe(1);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    startScroll(-SCROLL_STEP);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    startScroll(SCROLL_STEP);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                    clickFocused();
+                    return true;
+                case KeyEvent.KEYCODE_MENU:
+                    toggleButtons();
+                    return true;
+                case KeyEvent.KEYCODE_BACK:
+                    handleBack();
+                    return true;
+                default:
+                    if (isMedia(kc)) {
+                        web.dispatchKeyEvent(event);
+                        return true;
+                    }
+            }
+        } else if (action == KeyEvent.ACTION_UP) {
+            if (kc == KeyEvent.KEYCODE_DPAD_UP || kc == KeyEvent.KEYCODE_DPAD_DOWN) {
+                stopScroll();
+                return true;
+            }
+            if (isMedia(kc)) {
+                web.dispatchKeyEvent(event);
+                return true;
+            }
+        }
+
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void handleBack() {
+        web.evaluateJavascript("window.__tvEscape&&window.__tvEscape()", null);
+        if (web != null && web.canGoBack()) {
+            web.goBack();
+        } else {
+            finish();
+        }
+    }
+
+    private void toggleButtons() {
+        buttonsVisible = !buttonsVisible;
+        int v = buttonsVisible ? View.VISIBLE : View.INVISIBLE;
+        btnLeft.setVisibility(v);
+        btnRight.setVisibility(v);
     }
 
     private void startScroll(int step) {
@@ -275,58 +326,6 @@ public class MainActivity extends Activity {
             handler.removeCallbacks(scrollRunnable);
             scrollRunnable = null;
         }
-    }
-
-    private void enterButtonsMode() {
-        buttonsMode = true;
-        btnClose.setFocusable(true);
-        btnLeft.setFocusable(true);
-        btnRight.setFocusable(true);
-        btnClose.requestFocus();
-        btnLeft.setAlpha(1f);
-        btnRight.setAlpha(1f);
-        btnClose.setAlpha(1f);
-    }
-
-    private void exitButtonsMode() {
-        buttonsMode = false;
-        web.requestFocus();
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
-            if (buttonsMode) {
-                exitButtonsMode();
-            } else {
-                enterButtonsMode();
-            }
-            return true;
-        }
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (buttonsMode) {
-                exitButtonsMode();
-            } else if (web != null && web.canGoBack()) {
-                web.goBack();
-            } else {
-                finish();
-            }
-            return true;
-        }
-        if (isMedia(keyCode)) {
-            web.dispatchKeyEvent(event);
-            return true;
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    @Override
-    public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (isMedia(keyCode)) {
-            web.dispatchKeyEvent(event);
-            return true;
-        }
-        return super.onKeyUp(keyCode, event);
     }
 
     private static boolean isMedia(int keyCode) {
