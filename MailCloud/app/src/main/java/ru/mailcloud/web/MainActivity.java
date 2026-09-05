@@ -1,12 +1,19 @@
 package ru.mailcloud.web;
 
 import android.app.Activity;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -14,10 +21,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 public class MainActivity extends Activity {
-
-    private static final int SCROLL_STEP = 250;
-    private static final int SCROLL_REPEAT_DELAY = 80;
-    private static final int FOCUS_JS_DELAY = 800;
 
     private static final int[] MEDIA_KEYS = {
             KeyEvent.KEYCODE_MEDIA_PLAY,
@@ -33,20 +36,17 @@ public class MainActivity extends Activity {
     private WebView web;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private Runnable scrollRunnable;
-    private boolean scrollActive;
+    private TextView btnLeft;
+    private TextView btnRight;
+    private TextView btnClose;
+
+    private long lastSwipeTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        setImmersiveMode();
 
         web = new WebView(this);
         WebSettings s = web.getSettings();
@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
+        s.setTextZoom(100);
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
@@ -72,7 +73,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 web.requestFocus();
-                injectTvFocusScript();
+                injectTvScript();
             }
 
             @Override
@@ -83,38 +84,133 @@ public class MainActivity extends Activity {
         });
         web.setWebChromeClient(new WebChromeClient());
 
-        web.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                return handleKeyDown(keyCode, event);
-            } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                return handleKeyUp(keyCode, event);
-            }
-            return false;
+        web.loadUrl(getString(R.string.app_url));
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+        root.addView(web, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        btnLeft = makeArrowButton("\u276E", Gravity.LEFT | Gravity.CENTER_VERTICAL, 26, 24, true, v -> {
+            swipe(-1);
+        });
+        btnRight = makeArrowButton("\u276F", Gravity.RIGHT | Gravity.CENTER_VERTICAL, 26, 24, true, v -> {
+            swipe(1);
+        });
+        btnClose = makeArrowButton("\u2715", Gravity.RIGHT | Gravity.TOP, 34, 16, true, v -> {
+            web.goBack();
         });
 
-        web.loadUrl(getString(R.string.app_url));
-        setContentView(web);
+        root.addView(btnLeft);
+        root.addView(btnRight);
+        root.addView(btnClose);
+
+        setContentView(root);
     }
 
-    private void injectTvFocusScript() {
+    private TextView makeArrowButton(String glyph, int gravity, int sizeDp, int marginDp,
+                                     boolean focusable, View.OnClickListener listener) {
+        TextView tv = new TextView(this);
+        tv.setText(glyph);
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(sizeDp);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setGravity(Gravity.CENTER);
+        tv.setFocusable(focusable);
+        tv.setClickable(true);
+        int pad = dp(12);
+        tv.setPadding(pad, pad, pad, pad);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(0xCC000000);
+        bg.setStroke(dp(2), 0xFFFFD740);
+        tv.setBackground(bg);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(60), dp(60));
+        lp.gravity = gravity;
+        if ((gravity & Gravity.LEFT) != 0) lp.leftMargin = dp(marginDp);
+        if ((gravity & Gravity.RIGHT) != 0) lp.rightMargin = dp(marginDp);
+        if ((gravity & Gravity.TOP) != 0) lp.topMargin = dp(marginDp);
+        tv.setLayoutParams(lp);
+        tv.setOnClickListener(listener);
+
+        tv.setOnFocusChangeListener((v, hasFocus) -> {
+            v.animate().scaleX(hasFocus ? 1.3f : 1f)
+                    .scaleY(hasFocus ? 1.3f : 1f)
+                    .setDuration(120).start();
+        });
+
+        tv.setVisibility(View.GONE);
+        return tv;
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private void setImmersiveMode() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+    }
+
+    private void injectTvScript() {
         String js = "(function(){"
                 + "var style=document.createElement('style');"
                 + "style.textContent='"
                 + "*:focus{outline:3px solid #4FC3F7 !important;outline-offset:2px !important;}"
-                + "a:focus,b:focus,button:focus,input:focus,select:focus,textarea:focus,[tabindex]:focus{"
-                + "outline:3px solid #4FC3F7 !important;outline-offset:2px !important;"
-                + "box-shadow:0 0 8px rgba(79,191,247,0.6) !important;}"
+                + "a:focus,button:focus,input:focus,select:focus,textarea:focus,[tabindex]:focus{"
+                + "outline:3px solid #4FC3F7 !important;outline-offset:2px !important;}"
                 + "';"
                 + "document.head.appendChild(style);"
-                + "var els=document.querySelectorAll('a[href],button,input,select,textarea,[onclick],[role=button],[role=link]');"
-                + "for(var i=0;i<els.length;i++){"
-                + "if(!els[i].hasAttribute('tabindex'))els[i].setAttribute('tabindex','0');"
+                + "function findPhotoTarget(){"
+                + "var hits=document.querySelectorAll('[class*=photo],[class*=image],[class*=fullscreen],[class*=preview],[class*=viewer],[class*=lightbox]');"
+                + "for(var i=0;i<hits.length;i++){var r=hits[i].getBoundingClientRect();"
+                + "if(r.width>0&&r.height>0)return hits[i];}"
+                + "return null;"
                 + "}"
-                + "window.__tvScroll=function(dy){window.scrollBy(0,dy);};"
-                + "window.__tvScrollX=function(dx){window.scrollBy(dx,0);};"
-                + "window.__tvClickFocused=function(){"
+                + "window.__tvSwipe=function(dir){"
+                + "var target=findPhotoTarget()||document.body;"
+                + "var w=window.innerWidth,h=window.innerHeight;"
+                + "var off=Math.min(w,h)*0.35;"
+                + "var sx=w/2+dir*off,ex=w/2-dir*off,sy=h/2,ey=h/2;"
+                + "dispatchTouch(target,'touchstart',sx,sy);"
+                + "setTimeout(function(){dispatchTouch(target,'touchmove',(sx+ex)/2,(sy+ey)/2);},30);"
+                + "setTimeout(function(){"
+                + "dispatchTouch(target,'touchend',ex,ey);"
+                + "dispatchMouse(target,'mousedown',ex,ey);"
+                + "dispatchMouse(target,'mouseup',ex,ey);"
+                + "dispatchMouse(target,'click',ex,ey);"
+                + "},90);"
+                + "};"
+                + "function dispatchTouch(t,name,cx,cy){"
+                + "var ev;"
+                + "try{var touch=new Touch({identifier:1,target:t,clientX:cx,clientY:cy,pageX:cx,pageY:cy});"
+                + "ev=new TouchEvent(name,{bubbles:true,cancelable:true,touches:name==='touchend'?[]:[touch],targetTouches:[],changedTouches:[touch]});}"
+                + "catch(e){"
+                + "ev=new Event(name,{bubbles:true,cancelable:true});"
+                + "Object.defineProperty(ev,'touches',{value:name==='touchend'?[]:[{clientX:cx,clientY:cy}]});"
+                + "Object.defineProperty(ev,'changedTouches',{value:[{clientX:cx,clientY:cy}]});"
+                + "}"
+                + "t.dispatchEvent(ev);"
+                + "}"
+                + "function dispatchMouse(t,name,cx,cy){"
+                + "var ev=new MouseEvent(name,{bubbles:true,cancelable:true,clientX:cx,clientY:cy});"
+                + "t.dispatchEvent(ev);"
+                + "}"
+                + "window.__tvClick=function(){"
                 + "var el=document.activeElement;"
-                + "if(el&&el.tagName!=='BODY'&&el.tagName!=='HTML'){el.click();return true;}"
+                + "if(el&&el.tagName!=='BODY'&&el.tagName!=='HTML'){"
+                + "el.click();var r=el.getBoundingClientRect();"
+                + "dispatchMouse(el,'mousedown',r.left+r.width/2,r.top+r.height/2);"
+                + "dispatchMouse(el,'mouseup',r.left+r.width/2,r.top+r.height/2);"
+                + "return true;}"
                 + "return false;"
                 + "};"
                 + "return true;"
@@ -125,13 +221,36 @@ public class MainActivity extends Activity {
     private void reInjectAfterDelay() {
         handler.removeCallbacksAndMessages("reinject");
         handler.postDelayed(() -> {
-            if (web != null) {
-                injectTvFocusScript();
-            }
+            if (web != null) injectTvScript();
         }, 1500);
     }
 
-    private boolean handleKeyDown(int keyCode, KeyEvent event) {
+    private void swipe(int dir) {
+        long now = System.currentTimeMillis();
+        if (now - lastSwipeTime < 200) return;
+        lastSwipeTime = now;
+        showButtons();
+        if (web != null) {
+            web.evaluateJavascript("window.__tvSwipe&&window.__tvSwipe(" + dir + ")", null);
+            handler.removeCallbacksAndMessages("hide");
+            handler.postDelayed(this::hideButtons, 1600);
+        }
+    }
+
+    private void showButtons() {
+        btnLeft.setVisibility(View.VISIBLE);
+        btnRight.setVisibility(View.VISIBLE);
+        btnClose.setVisibility(View.VISIBLE);
+    }
+
+    private void hideButtons() {
+        btnLeft.setVisibility(View.GONE);
+        btnRight.setVisibility(View.GONE);
+        btnClose.setVisibility(View.GONE);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (web != null && web.canGoBack()) {
                 web.goBack();
@@ -140,82 +259,41 @@ public class MainActivity extends Activity {
             }
             return true;
         }
-
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             return true;
         }
-
         if (isMedia(keyCode)) {
             web.dispatchKeyEvent(event);
             return true;
         }
-
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_UP:
-                startScroll(-SCROLL_STEP);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                startScroll(SCROLL_STEP);
-                return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
-                scrollX(-SCROLL_STEP);
+                swipe(-1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                scrollX(SCROLL_STEP);
+                swipe(1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                web.evaluateJavascript("window.__tvClickFocused&&window.__tvClickFocused()", value -> {
+                web.evaluateJavascript("window.__tvClick&&window.__tvClick()", value -> {
                     if (value == null || value.equals("false")) {
-                        web.evaluateJavascript("document.activeElement.click()", null);
+                        web.evaluateJavascript(
+                                "(document.activeElement&&document.activeElement.click?document.activeElement.click():null)", null);
                     }
                 });
                 return true;
         }
-
-        return false;
+        return super.onKeyDown(keyCode, event);
     }
 
-    private boolean handleKeyUp(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            stopScroll();
-            return true;
-        }
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
         if (isMedia(keyCode)) {
             web.dispatchKeyEvent(event);
             return true;
         }
-        return false;
-    }
-
-    private void startScroll(int step) {
-        stopScroll();
-        scrollRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (web != null) {
-                    web.evaluateJavascript("window.__tvScroll(" + step + ")", null);
-                    handler.postDelayed(this, SCROLL_REPEAT_DELAY);
-                }
-            }
-        };
-        handler.post(scrollRunnable);
-        scrollActive = true;
-    }
-
-    private void scrollX(int step) {
-        if (web != null) {
-            web.evaluateJavascript("window.__tvScrollX(" + step + ")", null);
-        }
-    }
-
-    private void stopScroll() {
-        if (scrollRunnable != null) {
-            handler.removeCallbacks(scrollRunnable);
-            scrollRunnable = null;
-            scrollActive = false;
-        }
+        return super.onKeyUp(keyCode, event);
     }
 
     private static boolean isMedia(int keyCode) {
@@ -228,30 +306,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        setImmersiveMode();
         web.requestFocus();
         reInjectAfterDelay();
     }
 
     @Override
-    protected void onPause() {
-        stopScroll();
-        super.onPause();
-    }
-
-    @Override
     protected void onDestroy() {
-        stopScroll();
         handler.removeCallbacksAndMessages(null);
-        if (web != null) {
-            web.destroy();
-        }
+        if (web != null) web.destroy();
         super.onDestroy();
     }
 }
