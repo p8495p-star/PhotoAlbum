@@ -15,6 +15,7 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
@@ -55,7 +56,11 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
 
         ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this)
                 .setAudioAttributes(audioAttributes, true)
-                .setHandleAudioBecomingNoisy(true);
+                .setHandleAudioBecomingNoisy(true)
+                .setLoadControl(new DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(60000, 300000, 15000, 15000)
+                        .setTargetBufferBytes(300 * 1024 * 1024)
+                        .build());
         if (cookie != null && !cookie.isEmpty()) {
             Map<String, String> headers = new HashMap<>();
             headers.put("Cookie", cookie);
