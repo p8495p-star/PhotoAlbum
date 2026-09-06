@@ -8,15 +8,15 @@ import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 
-import androidx.annotation.NonNull;
-
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.datasource.http.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
 
 import java.util.HashMap;
@@ -53,31 +53,32 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                 .build();
 
-        player = new ExoPlayer.Builder(this)
+        ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this)
                 .setAudioAttributes(audioAttributes, true)
-                .setHandleAudioBecomingNoisy(true)
-                .build();
+                .setHandleAudioBecomingNoisy(true);
+        if (cookie != null && !cookie.isEmpty()) {
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Cookie", cookie);
+            DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory();
+            dataSourceFactory.setDefaultRequestProperties(headers);
+            playerBuilder.setMediaSourceFactory(new DefaultMediaSourceFactory(dataSourceFactory));
+        }
+        player = playerBuilder.build();
         player.addListener(this);
 
         playerView.setPlayer(player);
 
-        MediaItem.Builder itemBuilder = new MediaItem.Builder()
+        MediaItem item = new MediaItem.Builder()
                 .setUri(Uri.parse(url))
-                .setMediaMetadata(new MediaMetadata.Builder().setTitle(url).build());
-        if (cookie != null && !cookie.isEmpty()) {
-            Map<String, String> headers = new HashMap<>();
-            headers.put("Cookie", cookie);
-            itemBuilder.setRequestMetadata(new MediaItem.RequestMetadata.Builder()
-                    .setExtraHttpRequestProperties(headers)
-                    .build());
-        }
-        player.setMediaItem(itemBuilder.build());
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle(url).build())
+                .build();
+        player.setMediaItem(item);
         player.prepare();
         player.setPlayWhenReady(true);
     }
 
     @Override
-    public void onPlayerError(@NonNull PlaybackException error) {
+    public void onPlayerError(PlaybackException error) {
         if (player != null) {
             player.stop();
         }
