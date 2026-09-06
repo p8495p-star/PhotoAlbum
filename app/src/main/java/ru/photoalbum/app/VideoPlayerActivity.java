@@ -92,7 +92,7 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
     }
 
     @Override
-    public void onIsEnded(boolean isEnded) {
+    public void onIsEndedChanged(boolean isEnded) {
         if (isEnded) {
             finish();
         }
