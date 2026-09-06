@@ -30,6 +30,7 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
 
     private PlayerView playerView;
     private ExoPlayer player;
+    private boolean endNotified = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,12 +92,47 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
     }
 
     @Override
-    public void onIsPlayingChanged(boolean isPlaying) {
-        if (isPlaying) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } else {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    public void onIsEnded(boolean isEnded) {
+        if (isEnded) {
+            finish();
         }
+    }
+
+    @Override
+    public void finish() {
+        notifyVideoClosed();
+        super.finish();
+    }
+
+    private void notifyVideoClosed() {
+        if (endNotified) return;
+        endNotified = true;
+        MainActivity.notifyVideoFinished();
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_MEDIA_REWIND:
+                    seekRelative(-15000);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+                    seekRelative(15000);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_MEDIA_NEXT:
+                    seekRelative(30000);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                    seekRelative(-30000);
+                    return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
@@ -120,22 +156,6 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
             case KeyEvent.KEYCODE_MEDIA_STOP:
                 player.stop();
                 finish();
-                return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-            case KeyEvent.KEYCODE_MEDIA_REWIND:
-                seekRelative(-15000);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
-                seekRelative(15000);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_UP:
-            case KeyEvent.KEYCODE_MEDIA_NEXT:
-                seekRelative(30000);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-                seekRelative(-30000);
                 return true;
             default:
                 return super.onKeyDown(keyCode, event);

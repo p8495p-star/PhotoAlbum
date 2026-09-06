@@ -31,4 +31,10 @@
       return openNative(url);
     }
   };
+
+  window.__photoAlbumVideoFinished = function () {
+    try {
+      window.dispatchEvent(new CustomEvent('photoalbum-video-end'));
+    } catch (e) {}
+  };
 })();

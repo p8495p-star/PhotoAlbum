@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
 
+    private static volatile MainActivity instance;
+
     private static final int[] MEDIA_KEYS = {
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE,
@@ -30,9 +32,26 @@ public class MainActivity extends Activity {
 
     private WebView web;
 
+    public static void notifyVideoFinished() {
+        final MainActivity a = instance;
+        if (a == null) return;
+        a.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                WebView w = a.web;
+                if (w != null) {
+                    w.evaluateJavascript(
+                            "window.__photoAlbumVideoFinished&&window.__photoAlbumVideoFinished()",
+                            null);
+                }
+            }
+        });
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         web = new WebView(this);
@@ -126,6 +145,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (instance == this) {
+            instance = null;
+        }
         if (web != null) {
             web.destroy();
         }
