@@ -2,6 +2,7 @@ package ru.photoalbum.app;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
@@ -9,6 +10,10 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
 
@@ -47,13 +52,34 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                injectPlayerScript();
                 web.requestFocus();
             }
         });
         web.setWebChromeClient(new WebChromeClient());
+        web.addJavascriptInterface(new WebAppInterface(this), "PhotoAlbumBridge");
         web.loadUrl(getString(R.string.app_url));
 
         setContentView(web);
+    }
+
+    private void injectPlayerScript() {
+        if (web == null) return;
+        try {
+            InputStream in = getAssets().open("player_inject.js");
+            byte[] buf = new byte[in.available()];
+            int off = 0;
+            while (off < buf.length) {
+                int n = in.read(buf, off, buf.length - off);
+                if (n < 0) break;
+                off += n;
+            }
+            in.close();
+            String js = new String(buf, 0, off, StandardCharsets.UTF_8);
+            web.evaluateJavascript(js, null);
+        } catch (IOException e) {
+            Log.w("PhotoAlbum", "inject player script failed", e);
+        }
     }
 
     @Override
