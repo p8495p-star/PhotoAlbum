@@ -84,18 +84,18 @@ public class VideoPlayerActivity extends Activity implements Player.Listener {
     }
 
     @Override
+    public void onPlaybackStateChanged(int playbackState) {
+        if (playbackState == Player.STATE_ENDED) {
+            finish();
+        }
+    }
+
+    @Override
     public void onPlayerError(PlaybackException error) {
         if (player != null) {
             player.stop();
         }
         finish();
-    }
-
-    @Override
-    public void onIsEndedChanged(boolean isEnded) {
-        if (isEnded) {
-            finish();
-        }
     }
 
     @Override
